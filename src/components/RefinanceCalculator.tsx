@@ -237,12 +237,25 @@ export default function RefinanceCalculator() {
     }
   };
 
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error: any) {
+      console.error("Login failed", error);
+      if (error.code === 'auth/unauthorized-domain') {
+        alert(`Domain Unauthorized: Please add "${window.location.hostname}" to your Firebase Console -> Authentication -> Settings -> Authorized Domains.`);
+      } else {
+        alert(`Login Error: ${error.message}`);
+      }
+    }
+  };
+
   const savePresentation = async () => {
     if (!user) {
       try {
-        await signInWithPopup(auth, googleProvider);
+        await handleLogin();
+        if (!auth.currentUser) return; // Login failed or cancelled
       } catch (error) {
-        console.error("Login failed", error);
         return;
       }
     }
@@ -820,7 +833,7 @@ export default function RefinanceCalculator() {
             </div>
           ) : (
             <button 
-              onClick={() => signInWithPopup(auth, googleProvider)}
+              onClick={handleLogin}
               className="flex items-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-xl text-sm font-bold hover:bg-brand-blue/90 transition-all shadow-md"
             >
               <UserIcon size={16} />
