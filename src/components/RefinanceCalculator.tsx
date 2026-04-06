@@ -30,7 +30,7 @@ import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 import { auth, db, signInWithPopup, googleProvider, onAuthStateChanged, User, handleFirestoreError, OperationType } from '../firebase';
 import { collection, addDoc, getDoc, doc, updateDoc, getDocs, query, where, serverTimestamp, Timestamp } from 'firebase/firestore';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 
 // Detailed state-specific fee data (estimated)
 interface StateFeeConfig {
@@ -156,16 +156,17 @@ export default function RefinanceCalculator() {
   const [isClientView, setIsClientView] = useState(false);
 
   const handleAddressLookup = async (query: string) => {
-    if (!query || query.length < 5) return;
+    if (!query || query.length < 4) return;
     setIsSearchingAddress(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: `Address: ${query}`,
+        contents: query,
         config: {
-          systemInstruction: "Return only the single most accurate full postal address for the query. Use Google Maps.",
+          systemInstruction: "Return only the best matching full postal address string for the query. Use Google Maps.",
           tools: [{ googleMaps: {} }],
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
         },
       });
       
@@ -181,9 +182,9 @@ export default function RefinanceCalculator() {
       }
 
       const suggestedAddress = response.text?.trim();
-      if (suggestedAddress && suggestedAddress.length > 10) {
+      if (suggestedAddress && suggestedAddress.length > 8) {
         if (!newSuggestions.some(s => s.display_name === suggestedAddress)) {
-          if (/\d/.test(suggestedAddress) && suggestedAddress.includes(',')) {
+          if (/\d/.test(suggestedAddress)) {
             newSuggestions.push({ display_name: suggestedAddress });
           }
         }
@@ -201,12 +202,12 @@ export default function RefinanceCalculator() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (propertyAddress.length > 5) {
+      if (propertyAddress.length >= 4) {
         handleAddressLookup(propertyAddress);
       } else {
         setAddressSuggestions([]);
       }
-    }, 400); // Even faster debounce
+    }, 250); // Ultra-fast debounce
     return () => clearTimeout(timer);
   }, [propertyAddress]);
 
@@ -489,7 +490,17 @@ export default function RefinanceCalculator() {
     }
 
     const interestSavings = cumulativeInterestExisting - cumulativeInterestNew;
-    const totalPaymentSavings = (existingPayment * Math.min(calcMonths, remainingMonthsExisting)) - (newMonthlyPayment * Math.min(calcMonths, newTerm));
+    
+    // 1. Net Cash Flow Savings
+    // Total payments avoided - Upfront cash paid
+    const totalPaymentsExisting = existingPayment * Math.min(calcMonths, remainingMonthsExisting);
+    const totalPaymentsNew = newMonthlyPayment * Math.min(calcMonths, newTerm);
+    const upfrontCash = financeClosingCosts ? 0 : estimatedClosingCosts;
+    const netCashFlowSavings = totalPaymentsExisting - (totalPaymentsNew + upfrontCash);
+
+    // 3. Net Financial Benefit
+    // The "True" wealth gain: Interest Saved - Total Closing Costs
+    const netFinancialBenefit = interestSavings - estimatedClosingCosts;
 
     // 8. Freedom Point Calculation (Accelerated Payoff)
     let freedomMonths = 0;
@@ -543,7 +554,8 @@ export default function RefinanceCalculator() {
       estimatedClosingCosts,
       breakEvenMonths,
       interestSavings,
-      totalPaymentSavings,
+      totalPaymentSavings: netCashFlowSavings,
+      netFinancialBenefit,
       freedomMonths,
       remainingMonthsExisting,
       wealthAccelerated,
@@ -835,7 +847,13 @@ export default function RefinanceCalculator() {
       doc.text('Financial Impact Summary', 14, finalY + 15);
       doc.setFontSize(10);
       doc.text(`Total Interest Savings (${savingsYears} Years): ${formatCurrency(results.interestSavings)}`, 14, finalY + 22);
-      doc.text(`Estimated Closing Costs: ${formatCurrency(results.estimatedClosingCosts)}`, 14, finalY + 28);
+      doc.text(`Net Cash Flow Savings (${savingsYears} Years): ${formatCurrency(results.totalPaymentSavings)}`, 14, finalY + 29);
+      doc.setFontSize(14);
+      doc.setTextColor(0, 128, 128); // Brand Teal
+      doc.text(`Net Financial Benefit: ${formatCurrency(results.netFinancialBenefit)}`, 14, finalY + 39);
+      doc.setTextColor(0, 0, 0); // Reset to black
+      doc.setFontSize(10);
+      doc.text(`Estimated Closing Costs: ${formatCurrency(results.estimatedClosingCosts)}`, 14, finalY + 49);
       
       doc.save(`Refinance_Report_${selectedState}.pdf`);
     } finally {
@@ -1345,9 +1363,21 @@ export default function RefinanceCalculator() {
                         </p>
                       </div>
                       <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Total Payment Savings</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Net Cash Flow Savings</p>
                         <p className={`text-2xl font-black ${calculateResults.totalPaymentSavings > 0 ? 'text-brand-blue' : 'text-rose-600'}`}>
                           {formatCurrency(calculateResults.totalPaymentSavings)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 p-4 bg-brand-blue/5 rounded-xl border border-brand-blue/10">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold text-brand-blue uppercase tracking-wider">Net Financial Benefit</p>
+                          <p className="text-xs text-slate-500">Interest Saved - Total Closing Costs</p>
+                        </div>
+                        <p className={`text-3xl font-black ${calculateResults.netFinancialBenefit > 0 ? 'text-brand-blue' : 'text-rose-600'}`}>
+                          {formatCurrency(calculateResults.netFinancialBenefit)}
                         </p>
                       </div>
                     </div>
