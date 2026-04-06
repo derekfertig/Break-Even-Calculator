@@ -162,15 +162,35 @@ export default function RefinanceCalculator() {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: `Find the full, valid postal address for: ${query}. Return only the best matching address string.`,
+        contents: `Address: ${query}`,
         config: {
+          systemInstruction: "Return only the single most accurate full postal address for the query. Use Google Maps.",
           tools: [{ googleMaps: {} }],
         },
       });
       
+      const newSuggestions: any[] = [];
+      const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+      
+      if (groundingChunks && groundingChunks.length > 0) {
+        groundingChunks.forEach((chunk: any) => {
+          if (chunk.maps && chunk.maps.title) {
+            newSuggestions.push({ display_name: chunk.maps.title });
+          }
+        });
+      }
+
       const suggestedAddress = response.text?.trim();
-      if (suggestedAddress) {
-        setAddressSuggestions([{ display_name: suggestedAddress }]);
+      if (suggestedAddress && suggestedAddress.length > 10) {
+        if (!newSuggestions.some(s => s.display_name === suggestedAddress)) {
+          if (/\d/.test(suggestedAddress) && suggestedAddress.includes(',')) {
+            newSuggestions.push({ display_name: suggestedAddress });
+          }
+        }
+      }
+
+      if (newSuggestions.length > 0) {
+        setAddressSuggestions(newSuggestions);
       }
     } catch (error) {
       console.error("Address lookup failed", error);
@@ -181,10 +201,12 @@ export default function RefinanceCalculator() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (propertyAddress.length > 5 && !addressSuggestions.length) {
+      if (propertyAddress.length > 5) {
         handleAddressLookup(propertyAddress);
+      } else {
+        setAddressSuggestions([]);
       }
-    }, 1000);
+    }, 400); // Even faster debounce
     return () => clearTimeout(timer);
   }, [propertyAddress]);
 
@@ -393,10 +415,52 @@ export default function RefinanceCalculator() {
 
     const monthlySavings = existingPayment - newMonthlyPayment;
 
-    // 6. Break Even
-    // If financing, the "cost" is the higher loan balance. 
-    // We still use estimatedClosingCosts as the hurdle to overcome with monthly savings.
-    const breakEvenMonths = monthlySavings > 0 ? estimatedClosingCosts / monthlySavings : Infinity;
+    // 6. Hybrid Break-Even Calculation
+    // Industry standard: If monthly payment is lower, break-even = Costs / Monthly Savings.
+    // Professional standard: If monthly payment is higher (term reduction), break-even = Equity Gain Analysis.
+    let breakEvenMonths = Infinity;
+    
+    if (monthlySavings > 0) {
+      // Cash Flow Break-Even (What most users expect)
+      breakEvenMonths = estimatedClosingCosts / monthlySavings;
+    } else {
+      // Equity/Interest Break-Even (For Term Reduction scenarios)
+      let beBalanceExisting = currentBalance;
+      let beBalanceNew = newLoanAmount;
+      let cumulativeCashFlowSavings = financeClosingCosts ? 0 : -estimatedClosingCosts;
+
+      for (let m = 1; m <= 360; m++) {
+        // Existing Loan Progress
+        let existingInterest = 0;
+        let existingPrincipal = 0;
+        if (m <= (originalTerm - monthsPassed) && beBalanceExisting > 0) {
+          existingInterest = beBalanceExisting * existingMonthlyRate;
+          existingPrincipal = Math.min(beBalanceExisting, existingPayment - existingInterest);
+          beBalanceExisting -= existingPrincipal;
+        }
+
+        // New Loan Progress
+        let newInterest = 0;
+        let newPrincipal = 0;
+        if (m <= newTerm && beBalanceNew > 0) {
+          newInterest = beBalanceNew * newMonthlyRate;
+          newPrincipal = Math.min(beBalanceNew, newMonthlyPayment - newInterest);
+          beBalanceNew -= newPrincipal;
+        }
+
+        const currentExistingPayment = m <= (originalTerm - monthsPassed) ? existingPayment : 0;
+        const currentNewPayment = m <= newTerm ? newMonthlyPayment : 0;
+        cumulativeCashFlowSavings += (currentExistingPayment - currentNewPayment);
+
+        const equityDifference = beBalanceExisting - beBalanceNew;
+        const totalBenefit = equityDifference + cumulativeCashFlowSavings;
+
+        if (totalBenefit >= 0) {
+          breakEvenMonths = m;
+          break;
+        }
+      }
+    }
 
     // 7. Interest Savings Over Time
     const calcMonths = Math.min(savingsYears * 12, Math.max(newTerm, originalTerm - monthsPassed));
