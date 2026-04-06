@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: presentations
+    // Document ID: auto-generated
+    // Fields:
+    //   - borrowerName: string (required)
+    //   - propertyAddress: string (optional)
+    //   - borrowerEmail: string (optional)
+    //   - originalBalance: number (required)
+    //   - originationMonth: number (required)
+    //   - originationYear: number (required)
+    //   - originalTerm: number (required)
+    //   - existingRate: number (required)
+    //   - newRate: number (required)
+    //   - newTerm: number (required)
+    //   - selectedState: string (required)
+    //   - pointsType: string (required)
+    //   - pointsValue: number (required)
+    //   - hasOriginalTitlePolicy: bool (required)
+    //   - financeClosingCosts: bool (required)
+    //   - savingsYears: number (required)
+    //   - wealthRate: number (required)
+    //   - wealthToggle: string (required)
+    //   - manualCurrentBalance: number (optional)
+    //   - createdAt: timestamp (required)
+    //   - updatedAt: timestamp (required)
+    //   - createdBy: string (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "derekfertig@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidPresentation(data) {
+      return data.borrowerName is string && data.borrowerName.size() >= 0 && data.borrowerName.size() < 100 &&
+             (!('propertyAddress' in data) || (data.propertyAddress is string && data.propertyAddress.size() < 200)) &&
+             (!('borrowerEmail' in data) || (data.borrowerEmail is string && data.borrowerEmail.size() < 100)) &&
+             data.originalBalance is number && data.originalBalance >= 0 &&
+             data.newRate is number && data.newRate >= 0 &&
+             data.createdAt is timestamp &&
+             data.createdBy is string && data.createdBy == request.auth.uid;
+    }
+
+    match /presentations/{presentationId} {
+      // Allow anyone to read a presentation if they have the ID (shared link)
+      // In a more secure app, we might add a password or expiration
+      allow read: if true;
+      
+      // Only authenticated users can create/update their own presentations
+      allow create: if isAuthenticated() && isValidPresentation(request.resource.data);
+      allow update: if isAuthenticated() && isOwner(resource.data.createdBy) && isValidPresentation(request.resource.data);
+      allow delete: if isAuthenticated() && isOwner(resource.data.createdBy);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+  }
+}

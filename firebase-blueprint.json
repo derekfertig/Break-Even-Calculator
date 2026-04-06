@@ -1,0 +1,40 @@
+{
+  "entities": {
+    "Presentation": {
+      "title": "Presentation",
+      "description": "A saved refinance calculation presentation for a borrower.",
+      "type": "object",
+      "properties": {
+        "borrowerName": { "type": "string", "description": "Name of the borrower." },
+        "propertyAddress": { "type": "string", "description": "Address of the property." },
+        "borrowerEmail": { "type": "string", "description": "Email of the borrower." },
+        "originalBalance": { "type": "number", "description": "Original loan balance." },
+        "originationMonth": { "type": "number", "description": "Month the loan originated." },
+        "originationYear": { "type": "number", "description": "Year the loan originated." },
+        "originalTerm": { "type": "number", "description": "Original loan term in months." },
+        "existingRate": { "type": "number", "description": "Existing interest rate." },
+        "newRate": { "type": "number", "description": "New interest rate." },
+        "newTerm": { "type": "number", "description": "New loan term in months." },
+        "selectedState": { "type": "string", "description": "State for closing costs." },
+        "pointsType": { "type": "string", "description": "Type of points (none, points, credit)." },
+        "pointsValue": { "type": "number", "description": "Value of points/credit." },
+        "hasOriginalTitlePolicy": { "type": "boolean", "description": "Whether the borrower has an original title policy." },
+        "financeClosingCosts": { "type": "boolean", "description": "Whether to finance closing costs." },
+        "savingsYears": { "type": "number", "description": "Years for savings analysis." },
+        "wealthRate": { "type": "number", "description": "Rate of return for wealth creation." },
+        "wealthToggle": { "type": "string", "description": "Wealth creation toggle (accelerated, savings)." },
+        "manualCurrentBalance": { "type": "number", "description": "Manually entered current balance." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp of creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Timestamp of last update." },
+        "createdBy": { "type": "string", "description": "UID of the user who created the presentation." }
+      },
+      "required": ["borrowerName", "originalBalance", "newRate", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/presentations/{presentationId}": {
+      "schema": "Presentation",
+      "description": "Collection of saved presentations."
+    }
+  }
+}
