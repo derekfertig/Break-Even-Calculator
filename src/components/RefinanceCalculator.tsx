@@ -29,7 +29,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 import { auth, db, signInWithPopup, googleProvider, onAuthStateChanged, User, handleFirestoreError, OperationType } from '../firebase';
-import { collection, addDoc, getDoc, doc, updateDoc, getDocs, query, where, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, getDoc, doc, updateDoc, setDoc, getDocs, query, where, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 
 // Detailed state-specific fee data (estimated)
@@ -103,6 +103,17 @@ const RECORDING_FEE_EST = 260; // Base recording charge
 
 const REISSUE_CREDIT_PERCENT = 0.40; // 40% discount on title insurance
 
+const formatPhoneNumber = (value: string) => {
+  if (!value) return value;
+  const phoneNumber = value.replace(/[^\d]/g, '');
+  const phoneNumberLength = phoneNumber.length;
+  if (phoneNumberLength < 4) return phoneNumber;
+  if (phoneNumberLength < 7) {
+    return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3)}`;
+  }
+  return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3, 6)}-${phoneNumber.slice(6, 10)}`;
+};
+
 export default function RefinanceCalculator() {
   // Existing Loan State
   const [originalBalance, setOriginalBalance] = useState<number>(400000);
@@ -145,6 +156,24 @@ export default function RefinanceCalculator() {
   const [userPresentations, setUserPresentations] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [copied, setCopied] = useState(false);
+
+  // User Profile State
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [loProfile, setLoProfile] = useState<any>(null); // For client view
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+
+  // Profile Form State
+  const [profileForm, setProfileForm] = useState({
+    displayName: '',
+    companyName: '',
+    companyAddress: '',
+    nmlsNumber: '',
+    email: '',
+    phone: '',
+    website: '',
+    headshotUrl: ''
+  });
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareUrl);
@@ -214,9 +243,80 @@ export default function RefinanceCalculator() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        fetchUserProfile(currentUser.uid);
+      } else {
+        setUserProfile(null);
+      }
     });
     return () => unsubscribe();
   }, []);
+
+  const fetchUserProfile = async (uid: string) => {
+    try {
+      const docRef = doc(db, 'users', uid);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setUserProfile(data);
+        setProfileForm({
+          displayName: data.displayName || '',
+          companyName: data.companyName || '',
+          companyAddress: data.companyAddress || '',
+          nmlsNumber: data.nmlsNumber || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          website: data.website || '',
+          headshotUrl: data.headshotUrl || ''
+        });
+      } else {
+        // Initialize with auth data if no profile exists
+        const initialProfile = {
+          displayName: auth.currentUser?.displayName || '',
+          email: auth.currentUser?.email || '',
+          companyName: '',
+          companyAddress: '',
+          nmlsNumber: '',
+          phone: '',
+          website: '',
+          headshotUrl: auth.currentUser?.photoURL || ''
+        };
+        setProfileForm(initialProfile);
+      }
+    } catch (error) {
+      console.error("Error fetching user profile", error);
+    }
+  };
+
+  const fetchLoProfile = async (uid: string) => {
+    try {
+      const docRef = doc(db, 'users', uid);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        setLoProfile(docSnap.data());
+      }
+    } catch (error) {
+      console.error("Error fetching LO profile", error);
+    }
+  };
+
+  const saveUserProfile = async () => {
+    if (!user) return;
+    setIsProfileLoading(true);
+    try {
+      const profileData = {
+        ...profileForm,
+        updatedAt: serverTimestamp()
+      };
+      await setDoc(doc(db, 'users', user.uid), profileData);
+      setUserProfile(profileData);
+      setShowProfileModal(false);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
+    } finally {
+      setIsProfileLoading(false);
+    }
+  };
 
   useEffect(() => {
     // Check for ID in URL to load presentation
@@ -254,6 +354,11 @@ export default function RefinanceCalculator() {
         setWealthToggle(data.wealthToggle);
         setManualCurrentBalance(data.manualCurrentBalance);
         setCurrentPresentationId(id);
+        
+        // Fetch LO profile
+        if (data.createdBy) {
+          fetchLoProfile(data.createdBy);
+        }
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, `presentations/${id}`);
@@ -880,11 +985,19 @@ export default function RefinanceCalculator() {
                 {isClientView ? 'Operator View' : 'Client View'}
               </button>
               <button 
+                onClick={() => setShowProfileModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
+              >
+                <UserIcon size={16} />
+                Profile
+              </button>
+              <button 
                 onClick={() => {
                   setCurrentPresentationId(null);
                   setBorrowerName('');
                   setPropertyAddress('');
                   setBorrowerEmail('');
+                  setLoProfile(null);
                   // Optionally reset other fields to defaults
                 }}
                 className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
@@ -932,7 +1045,7 @@ export default function RefinanceCalculator() {
         </motion.div>
         <h1 className="text-4xl font-black tracking-tighter text-brand-blue mb-1">Refinance Break-Even Calculator</h1>
         <p className="text-slate-500 text-base max-w-2xl mx-auto">
-          Compare your current mortgage with a new potential loan to see if refinancing makes financial sense for your business.
+          Compare your current mortgage with a new potential loan to see if refinancing makes financial sense.
         </p>
       </header>
 
@@ -954,20 +1067,57 @@ export default function RefinanceCalculator() {
         </div>
         
         {isClientView ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="space-y-1">
-              <label className="text-xs font-bold uppercase tracking-wider text-brand-orange">Borrower Name</label>
-              <p className="text-xl font-black text-white">{borrowerName || "Derek Fertig"}</p>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="space-y-1">
+                <label className="text-xs font-bold uppercase tracking-wider text-brand-orange">Borrower Name</label>
+                <p className="text-xl font-black text-white">{borrowerName || "Derek Fertig"}</p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold uppercase tracking-wider text-brand-orange">Property Address</label>
+                <p className="text-xl font-black text-white">{propertyAddress || "123 Main St, City, State"}</p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold uppercase tracking-wider text-brand-orange">Borrower Email</label>
+                <p className="text-xl font-black text-white">{borrowerEmail || "derekfertig@gmail.com"}</p>
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs font-bold uppercase tracking-wider text-brand-orange">Property Address</label>
-              <p className="text-xl font-black text-white">{propertyAddress || "123 Main St, City, State"}</p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-bold uppercase tracking-wider text-brand-orange">Borrower Email</label>
-              <p className="text-xl font-black text-white">{borrowerEmail || "derekfertig@gmail.com"}</p>
-            </div>
-          </div>
+
+            {/* LO Profile Display */}
+            {(loProfile || userProfile) && (
+              <div className="mt-8 pt-8 border-t border-white/10 flex flex-col md:flex-row items-center gap-6">
+                <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-brand-orange shadow-xl flex-shrink-0 bg-white/10">
+                  <img 
+                    src={(loProfile || userProfile).headshotUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent((loProfile || userProfile).displayName)}&background=random`} 
+                    alt="Loan Officer"
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+                <div className="flex-1 text-center md:text-left space-y-1">
+                  <p className="text-xs font-bold uppercase tracking-widest text-brand-orange">Presented By</p>
+                  <h3 className="text-2xl font-black text-white">{(loProfile || userProfile).displayName}</h3>
+                  {((loProfile || userProfile).companyName || (loProfile || userProfile).companyAddress) && (
+                    <div className="text-sm text-white/80 font-medium">
+                      {(loProfile || userProfile).companyName && <span>{(loProfile || userProfile).companyName}</span>}
+                      {(loProfile || userProfile).companyName && (loProfile || userProfile).companyAddress && <span className="mx-2 opacity-30">|</span>}
+                      {(loProfile || userProfile).companyAddress && <span>{(loProfile || userProfile).companyAddress}</span>}
+                    </div>
+                  )}
+                  <div className="flex flex-wrap justify-center md:justify-start gap-x-4 gap-y-1 text-sm text-white/60">
+                    {(loProfile || userProfile).nmlsNumber && <span>NMLS #{(loProfile || userProfile).nmlsNumber}</span>}
+                    <span>{(loProfile || userProfile).email}</span>
+                    {(loProfile || userProfile).phone && <span>{(loProfile || userProfile).phone}</span>}
+                    {(loProfile || userProfile).website && (
+                      <a href={(loProfile || userProfile).website} target="_blank" rel="noopener noreferrer" className="text-brand-teal hover:underline">
+                        {(loProfile || userProfile).website.replace(/^https?:\/\//, '')}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="space-y-2">
@@ -1905,6 +2055,142 @@ export default function RefinanceCalculator() {
                     PDF
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Profile Modal */}
+      <AnimatePresence>
+        {showProfileModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-[2.5rem] p-8 max-w-xl w-full shadow-2xl relative overflow-hidden"
+            >
+              <button 
+                onClick={() => setShowProfileModal(false)}
+                className="absolute right-6 top-6 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X size={24} />
+              </button>
+              
+              <div className="mb-8">
+                <h3 className="text-2xl font-black text-slate-900 flex items-center gap-3">
+                  <UserIcon className="text-brand-blue" />
+                  Loan Officer Profile
+                </h3>
+                <p className="text-slate-500">This information will be displayed on your client-facing presentations.</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold uppercase text-slate-400">Full Name</label>
+                    <input 
+                      type="text" 
+                      value={profileForm.displayName}
+                      onChange={(e) => setProfileForm({...profileForm, displayName: e.target.value})}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-brand-blue transition-all"
+                      placeholder="John Doe"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold uppercase text-slate-400">Company Name</label>
+                    <input 
+                      type="text" 
+                      value={profileForm.companyName}
+                      onChange={(e) => setProfileForm({...profileForm, companyName: e.target.value})}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-brand-blue transition-all"
+                      placeholder="Mortgage Pros Inc."
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold uppercase text-slate-400">Company Address</label>
+                  <input 
+                    type="text" 
+                    value={profileForm.companyAddress}
+                    onChange={(e) => setProfileForm({...profileForm, companyAddress: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-brand-blue transition-all"
+                    placeholder="123 Finance Way, Suite 100, City, State"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold uppercase text-slate-400">NMLS Number</label>
+                    <input 
+                      type="text" 
+                      value={profileForm.nmlsNumber}
+                      onChange={(e) => setProfileForm({...profileForm, nmlsNumber: e.target.value})}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-brand-blue transition-all"
+                      placeholder="123456"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold uppercase text-slate-400">Email Address</label>
+                    <input 
+                      type="email" 
+                      value={profileForm.email}
+                      onChange={(e) => setProfileForm({...profileForm, email: e.target.value})}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-brand-blue transition-all"
+                      placeholder="john@example.com"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold uppercase text-slate-400">Phone Number</label>
+                    <input 
+                      type="tel" 
+                      value={profileForm.phone}
+                      onChange={(e) => {
+                        const formatted = formatPhoneNumber(e.target.value);
+                        setProfileForm({...profileForm, phone: formatted});
+                      }}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-brand-blue transition-all"
+                      placeholder="(555) 000-0000"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold uppercase text-slate-400">Website URL</label>
+                  <input 
+                    type="url" 
+                    value={profileForm.website}
+                    onChange={(e) => setProfileForm({...profileForm, website: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-brand-blue transition-all"
+                    placeholder="https://yourwebsite.com"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold uppercase text-slate-400">Headshot URL</label>
+                  <input 
+                    type="url" 
+                    value={profileForm.headshotUrl}
+                    onChange={(e) => setProfileForm({...profileForm, headshotUrl: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-brand-blue transition-all"
+                    placeholder="https://example.com/photo.jpg"
+                  />
+                  <p className="text-[10px] text-slate-400">Tip: Use a public URL for your headshot image.</p>
+                </div>
+
+                <button 
+                  onClick={saveUserProfile}
+                  disabled={isProfileLoading}
+                  className="w-full py-4 bg-brand-blue text-white rounded-2xl font-bold hover:bg-brand-blue/90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-blue/20 disabled:opacity-50 mt-4"
+                >
+                  {isProfileLoading ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
+                  Save Profile
+                </button>
               </div>
             </motion.div>
           </div>

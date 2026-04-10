@@ -29,12 +29,33 @@
         "createdBy": { "type": "string", "description": "UID of the user who created the presentation." }
       },
       "required": ["borrowerName", "originalBalance", "newRate", "createdAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile for the loan officer.",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string", "description": "Full name of the loan officer." },
+        "companyName": { "type": "string", "description": "Name of the mortgage company." },
+        "companyAddress": { "type": "string", "description": "Physical address of the company office." },
+        "nmlsNumber": { "type": "string", "description": "NMLS ID number." },
+        "email": { "type": "string", "description": "Professional email address." },
+        "phone": { "type": "string", "description": "Professional phone number." },
+        "website": { "type": "string", "description": "Professional website URL." },
+        "headshotUrl": { "type": "string", "description": "URL to the headshot image." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Timestamp of last update." }
+      },
+      "required": ["displayName", "email"]
     }
   },
   "firestore": {
     "/presentations/{presentationId}": {
       "schema": "Presentation",
       "description": "Collection of saved presentations."
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles for loan officers."
     }
   }
 }
