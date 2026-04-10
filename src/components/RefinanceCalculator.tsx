@@ -975,20 +975,20 @@ export default function RefinanceCalculator() {
             <div className="flex items-center gap-2">
               <button 
                 onClick={() => setIsClientView(!isClientView)}
-                className={`flex items-center gap-2 px-4 py-2 border rounded-xl text-sm font-bold transition-all shadow-sm ${
+                className={`flex items-center gap-2 px-3 py-1.5 border rounded-xl text-xs font-bold transition-all shadow-sm ${
                   isClientView 
                     ? 'bg-brand-orange text-white border-brand-orange' 
                     : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                 }`}
               >
-                <UserIcon size={16} />
+                <UserIcon size={14} />
                 {isClientView ? 'Operator View' : 'Client View'}
               </button>
               <button 
                 onClick={() => setShowProfileModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
+                className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
               >
-                <UserIcon size={16} />
+                <UserIcon size={14} />
                 Profile
               </button>
               <button 
@@ -1000,19 +1000,19 @@ export default function RefinanceCalculator() {
                   setLoProfile(null);
                   // Optionally reset other fields to defaults
                 }}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
+                className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
               >
-                <FileText size={16} />
+                <FileText size={14} />
                 New
               </button>
               <button 
                 onClick={fetchUserPresentations}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
+                className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
               >
-                <History size={16} />
+                <History size={14} />
                 Record Locator
               </button>
-              <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-xl border border-slate-200">
+              <div className="flex items-center gap-2 px-2 py-1.5 bg-slate-100 rounded-xl border border-slate-200">
                 <div className="w-6 h-6 rounded-full bg-brand-blue flex items-center justify-center text-[10px] font-bold text-white uppercase">
                   {user.displayName?.charAt(0) || user.email?.charAt(0)}
                 </div>
@@ -1029,9 +1029,9 @@ export default function RefinanceCalculator() {
           ) : (
             <button 
               onClick={handleLogin}
-              className="flex items-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-xl text-sm font-bold hover:bg-brand-blue/90 transition-all shadow-md"
+              className="flex items-center gap-2 px-3 py-1.5 bg-brand-blue text-white rounded-xl text-xs font-bold hover:bg-brand-blue/90 transition-all shadow-md"
             >
-              <UserIcon size={16} />
+              <UserIcon size={14} />
               Sign In
             </button>
           )}
